@@ -23,9 +23,7 @@ La API está completamente desplegada y funcional en AWS. Ideal para pruebas y e
 
 ## 🌐 Acceso a la API Desplegada
 
-La API ya está desplegada en AWS y puede acceder a ella a través de la siguiente URL base:
-
-URLs específicas para uso:
+La API ya está desplegada en AWS y puede acceder a ella a través las siguientes URLs específicas:
 
 ### Endpoints de Fusión
 - Fusión básica (Luke Skywalker): `https://0zefko7ls6.execute-api.us-east-1.amazonaws.com/dev/fusion`
@@ -43,7 +41,7 @@ URLs específicas para uso:
 ### Documentación
 - Acceder a la documentación interactiva: `https://0zefko7ls6.execute-api.us-east-1.amazonaws.com/dev/docs`
 
-> **Consejo:** Esta versión desplegada es la recomendada para pruebas y evaluación del proyecto, ya que evita los posibles problemas que pueden surgir en entornos locales por restricciones entre AWS y el SO.
+> **💡 Consejo:** Esta versión desplegada es la recomendada para pruebas y evaluación del proyecto, ya que evita los posibles problemas que pueden surgir en entornos locales por restricciones entre AWS y el SO.
 
 ---
 

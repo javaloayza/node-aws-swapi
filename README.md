@@ -1,4 +1,4 @@
-# Stefanini Rimac Challenge - Star Wars Weather Fusion API
+# Star Wars Weather Fusion API - Challenge
 
 Una API RESTful que fusiona datos de personajes de Star Wars (SWAPI) con información meteorológica actual (OpenWeatherMap) de sus planetas natales, creando una experiencia única de datos interrelacionados.
 

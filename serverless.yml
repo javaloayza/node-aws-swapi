@@ -1,0 +1,163 @@
+service: stefanini-rimac-challenge
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 128
+  timeout: 30
+  deploymentBucket:
+    versioning: false
+  environment:
+    # All hardcoded for guaranteed functionality
+    STAGE: dev
+    DYNAMODB_TABLE: stefanini-rimac-challenge-dev
+    CACHE_TABLE: stefanini-rimac-challenge-cache-dev
+    OPENWEATHER_API_KEY: d47deab734da3f00b9571754d3daee8c
+    LOG_LEVEL: info
+    JWT_SECRET: b62d5d8da9464519ea4080bc75b6b08a26099afe5ccaa24ad40acc7cee48f940
+    RATE_LIMIT_REQUESTS: "100"
+    RATE_LIMIT_WINDOW_MINUTES: "60"
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:provider.environment.DYNAMODB_TABLE}"
+            - "arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/${self:provider.environment.CACHE_TABLE}"
+
+functions:
+  getFusion:
+    handler: dist/handlers/fusion.handler
+    events:
+      - http:
+          path: fusion
+          method: get
+          cors: true
+    environment:
+      # Hardcoded for challenge demo (use environment variables in real projects)
+      OPENWEATHER_API_KEY: d47deab734da3f00b9571754d3daee8c
+      RATE_LIMIT_REQUESTS: "100"
+      RATE_LIMIT_WINDOW_MINUTES: "60"
+      DYNAMODB_TABLE: stefanini-rimac-challenge-dev
+      CACHE_TABLE: stefanini-rimac-challenge-cache-dev
+
+  postStore:
+    handler: dist/handlers/store.handler
+    events:
+      - http:
+          path: store
+          method: post
+          cors: true
+    environment:
+      # Hardcoded for challenge demo (use environment variables in real projects)
+      DYNAMODB_TABLE: stefanini-rimac-challenge-dev
+      CACHE_TABLE: stefanini-rimac-challenge-cache-dev
+
+  getHistory:
+    handler: dist/handlers/history.handler
+    events:
+      - http:
+          path: history
+          method: get
+          cors: true
+    environment:
+      # Hardcoded for challenge demo (use environment variables in real projects)
+      DYNAMODB_TABLE: stefanini-rimac-challenge-dev
+      CACHE_TABLE: stefanini-rimac-challenge-cache-dev
+
+  getDocs:
+    handler: dist/handlers/docs.handler
+    events:
+      - http:
+          path: docs
+          method: get
+          cors: true
+      - http:
+          path: docs/{proxy+}
+          method: get
+          cors: true
+    environment:
+      # Hardcoded for challenge demo (use environment variables in real projects)
+      DYNAMODB_TABLE: stefanini-rimac-challenge-dev
+      CACHE_TABLE: stefanini-rimac-challenge-cache-dev
+
+package:
+  individually: false
+  exclude:
+    - .git/**
+    - __tests__/**
+    - coverage/**
+    - "*.md"
+    - .env*
+    - src/**
+  include:
+    - dist/**
+
+custom:
+  dotenv:
+    path: .env
+  serverless-offline:
+    httpPort: 3030
+    lambdaPort: 3034
+
+plugins:
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+resources:
+  Resources:
+    # Main table for fusion data and history
+    FusionadosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: N
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: timestamp-index
+            KeySchema:
+              - AttributeName: pk
+                KeyType: HASH
+              - AttributeName: timestamp
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+
+    # Cache table with automatic TTL
+    CacheTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CACHE_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: cacheKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: cacheKey
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true

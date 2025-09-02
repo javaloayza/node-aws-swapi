@@ -1,0 +1,662 @@
+openapi: 3.0.3
+info:
+  title: Stefanini Rimac Challenge API
+  description: |
+    RESTful API que fusiona datos de Star Wars API (SWAPI) con información meteorológica.
+    
+    ## Características principales:
+    - **Fusión de datos**: Combina personajes de Star Wars con datos meteorológicos de sus planetas
+    - **Almacenamiento personalizado**: Permite guardar datos custom del usuario
+    - **Historial completo**: Consulta todo el historial con filtros y paginación
+    - **Cache inteligente**: TTL de 30 minutos para optimizar rendimiento
+    - **Manejo de errores**: Degradación elegante con datos mock cuando APIs fallan
+    
+  version: 1.0.0
+  contact:
+    name: Aldo Loayza
+    email: aldo.loayza@example.com
+  license:
+    name: MIT
+
+servers:
+  - url: https://0zefko7ls6.execute-api.us-east-1.amazonaws.com/dev
+    description: AWS Production
+  - url: http://localhost:3030
+    description: Local Development
+
+paths:
+  /fusion:
+    get:
+      tags:
+        - Fusion
+      summary: Obtener datos fusionados de personaje y clima
+      description: |
+        Combina información de un personaje de Star Wars con datos meteorológicos actuales de su planeta natal.
+        
+        **Proceso de fusión:**
+        1. Obtiene datos del personaje desde SWAPI
+        2. Extrae información del planeta natal
+        3. Mapea el planeta a una ubicación terrestre equivalente
+        4. Consulta datos meteorológicos actuales
+        5. Calcula compatibilidad clima-personaje
+        6. Almacena en cache por 30 minutos
+      parameters:
+        - name: character
+          in: query
+          description: ID del personaje de Star Wars (1-83)
+          required: false
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*$'
+            example: "1"
+          examples:
+            luke:
+              value: "1"
+              summary: Luke Skywalker
+            leia:
+              value: "5" 
+              summary: Princesa Leia
+            vader:
+              value: "4"
+              summary: Darth Vader
+            han_solo:
+              value: "14"
+              summary: Han Solo
+            obi_wan:
+              value: "10"
+              summary: Obi-Wan Kenobi
+            yoda:
+              value: "20"
+              summary: Yoda
+            chewbacca:
+              value: "13"
+              summary: Chewbacca
+            r2d2:
+              value: "3"
+              summary: R2-D2
+      responses:
+        '200':
+          description: Datos fusionados obtenidos exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/FusionData'
+                  meta:
+                    $ref: '#/components/schemas/ResponseMeta'
+        '400':
+          description: Parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /store:
+    post:
+      tags:
+        - Storage
+      summary: Almacenar datos personalizados
+      description: |
+        Permite guardar cualquier tipo de datos personalizados del usuario en el sistema.
+        Los datos se almacenan con metadata de la solicitud para auditoria.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  type: object
+                  description: Cualquier estructura de datos JSON
+                  example:
+                    message: "Mi mensaje personalizado"
+                    preferences:
+                      theme: "dark"
+                      language: "es"
+                metadata:
+                  type: object
+                  description: Metadata adicional opcional
+                  example:
+                    category: "user-preferences"
+                    version: "1.0"
+            examples:
+              simple_message:
+                summary: Mensaje simple
+                value:
+                  data:
+                    message: "Hola desde la API"
+                    timestamp: "2024-01-15T10:30:00Z"
+              user_config:
+                summary: Configuración de usuario
+                value:
+                  data:
+                    user_id: "12345"
+                    settings:
+                      notifications: true
+                      theme: "light"
+                    preferences:
+                      language: "es"
+                      timezone: "America/Lima"
+      responses:
+        '201':
+          description: Datos almacenados exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Data stored successfully"
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        example: "550e8400-e29b-41d4-a716-446655440000"
+                      timestamp:
+                        type: number
+                        example: 1642248600000
+                  meta:
+                    $ref: '#/components/schemas/ResponseMeta'
+        '400':
+          description: Datos inválidos o body vacío
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /history:
+    get:
+      tags:
+        - History
+      summary: Consultar historial de datos
+      description: |
+        Retorna el historial completo de datos almacenados (fusionados y personalizados) 
+        con soporte para filtrado, paginación y ordenamiento cronológico.
+      parameters:
+        - name: source
+          in: query
+          description: Filtrar por tipo de origen de datos
+          required: false
+          schema:
+            type: string
+            enum: [fusion, custom, all]
+            default: all
+          examples:
+            fusion_only:
+              value: "fusion"
+              summary: Solo datos de fusión
+            custom_only:
+              value: "custom" 
+              summary: Solo datos personalizados
+            all_data:
+              value: "all"
+              summary: Todos los datos
+        - name: limit
+          in: query
+          description: Número máximo de elementos a retornar
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 20
+        - name: cursor
+          in: query
+          description: Clave para paginación (obtenida de respuesta anterior como nextCursor)
+          required: false
+          schema:
+            type: string
+            example: "eyJwayI6IkZVU0lPTkVEIzUiLCJzayI6IkZVU0lPTiMxNjQyMjQ4NjAwMDAwIn0="
+        - name: lastEvaluatedKey
+          in: query
+          description: Alias alternativo para cursor (ambos funcionan igual)
+          required: false
+          schema:
+            type: string
+            example: "eyJwayI6IkZVU0lPTkVEIzUiLCJzayI6IkZVU0lPTiMxNjQyMjQ4NjAwMDAwIn0="
+        - name: startTime
+          in: query
+          description: Filtrar desde esta fecha (timestamp Unix)
+          required: false
+          schema:
+            type: integer
+            example: 1642204800000
+        - name: endTime
+          in: query
+          description: Filtrar hasta esta fecha (timestamp Unix)
+          required: false
+          schema:
+            type: integer
+            example: 1642291200000
+      responses:
+        '200':
+          description: Historial obtenido exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          oneOf:
+                            - $ref: '#/components/schemas/FusionHistoryItem'
+                            - $ref: '#/components/schemas/CustomHistoryItem'
+                      pagination:
+                        type: object
+                        properties:
+                          count:
+                            type: integer
+                            example: 15
+                          scannedCount:
+                            type: integer
+                            example: 20
+                          lastEvaluatedKey:
+                            type: string
+                            nullable: true
+                            example: "eyJwayI6IkZVU0lPTkVEIzUiLCJzayI6IkZVU0lPTiMxNjQyMjQ4NjAwMDAwIn0="
+                          hasNextPage:
+                            type: boolean
+                            example: true
+                  meta:
+                    $ref: '#/components/schemas/ResponseMeta'
+        '400':
+          description: Parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    FusionData:
+      type: object
+      properties:
+        character:
+          $ref: '#/components/schemas/Character'
+        homeworld:
+          $ref: '#/components/schemas/Planet'
+        weather:
+          $ref: '#/components/schemas/Weather'
+        fusion:
+          $ref: '#/components/schemas/FusionAnalysis'
+        meta:
+          $ref: '#/components/schemas/FusionMeta'
+
+    Character:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "1"
+        name:
+          type: string
+          example: "Luke Skywalker"
+        height:
+          type: number
+          nullable: true
+          example: 172
+        mass:
+          type: number
+          nullable: true
+          example: 77
+        hairColor:
+          type: string
+          example: "blond"
+        skinColor:
+          type: string
+          example: "fair"
+        eyeColor:
+          type: string
+          example: "blue"
+        birthYear:
+          type: string
+          example: "19BBY"
+        gender:
+          type: string
+          example: "male"
+
+    Planet:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "1"
+        name:
+          type: string
+          example: "Tatooine"
+        climate:
+          type: array
+          items:
+            type: string
+          example: ["arid"]
+        terrain:
+          type: array
+          items:
+            type: string
+          example: ["desert"]
+        population:
+          type: number
+          nullable: true
+          example: 200000
+
+    Weather:
+      type: object
+      properties:
+        location:
+          type: string
+          example: "Tatooine"
+        country:
+          type: string
+          example: "Galaxy Far Far Away"
+        temperature:
+          type: number
+          example: 28
+        feelsLike:
+          type: number
+          example: 32
+        humidity:
+          type: number
+          example: 45
+        pressure:
+          type: number
+          example: 1013
+        windSpeed:
+          type: number
+          example: 15
+        conditions:
+          type: string
+          example: "Clear sky"
+        source:
+          type: string
+          enum: [OPENWEATHERMAP, MOCK_DATA]
+          example: "OPENWEATHERMAP"
+        isFallback:
+          type: boolean
+          example: false
+
+    FusionAnalysis:
+      type: object
+      properties:
+        summary:
+          type: string
+          example: "Luke Skywalker from Tatooine - Currently Clear sky"
+        compatibility:
+          type: string
+          enum: [perfect match, good match, fair match, poor match, unknown]
+          description: |
+            Nivel de compatibilidad entre el personaje, su planeta y las condiciones climáticas actuales:
+            - perfect match: Las condiciones actuales son ideales para el planeta/personaje
+            - good match: Las condiciones actuales son adecuadas para el planeta/personaje
+            - fair match: Las condiciones son aceptables para el planeta/personaje
+            - poor match: Las condiciones no son adecuadas para el planeta/personaje
+            - unknown: No se pudo determinar la compatibilidad
+          example: "perfect match"
+        dataQuality:
+          type: object
+          properties:
+            character:
+              type: string
+              enum: [complete, partial, limited]
+              example: "complete"
+            planet:
+              type: string
+              enum: [complete, partial, limited]
+              example: "complete"
+            weather:
+              type: string
+              enum: [complete, partial, limited]
+              example: "complete"
+
+    FusionMeta:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        source:
+          type: string
+          example: "SWAPI + OpenWeatherMap"
+        version:
+          type: string
+          example: "1.0.0"
+        processingTime:
+          type: object
+          properties:
+            character:
+              type: number
+              example: 245
+            planet:
+              type: number
+              example: 189
+            weather:
+              type: number
+              example: 456
+            total:
+              type: number
+              example: 890
+
+    FusionHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        characterId:
+          type: string
+          example: "1"
+        data:
+          $ref: '#/components/schemas/FusionData'
+        timestamp:
+          type: number
+          example: 1642248600000
+        source:
+          type: string
+          example: "fusion"
+        metadata:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            processingTime:
+              type: number
+              example: 890
+            cached:
+              type: boolean
+              example: false
+
+    CustomHistoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        data:
+          type: object
+          example:
+            message: "Custom user data"
+            category: "preferences"
+        timestamp:
+          type: number
+          example: 1642248600000
+        source:
+          type: string
+          example: "custom"
+        metadata:
+          type: object
+          properties:
+            requestId:
+              type: string
+              format: uuid
+            userAgent:
+              type: string
+              example: "PostmanRuntime/7.45.0"
+            ip:
+              type: string
+              example: "192.168.1.1"
+
+    ResponseMeta:
+      type: object
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00.000Z"
+        processingTime:
+          type: number
+          description: Tiempo de procesamiento en milisegundos
+          example: 245
+        version:
+          type: string
+          example: "1.0.0"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: |
+                Códigos de error posibles:
+                - VALIDATION_ERROR: Error de validación en parámetros o datos
+                - RATE_LIMIT_EXCEEDED: Se ha superado el límite de solicitudes
+                - SWAPI_TIMEOUT: Timeout en la conexión a SWAPI
+                - SWAPI_ERROR: Error general de SWAPI
+                - SWAPI_NOT_FOUND: Recurso no encontrado en SWAPI
+                - SWAPI_SERVER_ERROR: Error del servidor de SWAPI
+                - WEATHER_TIMEOUT: Timeout en la conexión a OpenWeatherMap
+                - WEATHER_UNAUTHORIZED: API Key inválida o no proporcionada
+                - WEATHER_NOT_FOUND: Ubicación no encontrada
+                - WEATHER_SERVER_ERROR: Error del servidor de clima
+                - DB_ERROR: Error en operaciones de base de datos
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Character parameter is required"
+            status:
+              type: integer
+              example: 400
+            details:
+              type: object
+              nullable: true
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+  examples:
+    FusionSuccessResponse:
+      summary: Respuesta exitosa de fusión
+      value:
+        success: true
+        data:
+          character:
+            id: "1"
+            name: "Luke Skywalker"
+            height: 172
+            mass: 77
+            hairColor: "blond"
+            skinColor: "fair"
+            eyeColor: "blue"
+            birthYear: "19BBY"
+            gender: "male"
+          homeworld:
+            id: "1"
+            name: "Tatooine"
+            climate: ["arid"]
+            terrain: ["desert"]
+            population: 200000
+          weather:
+            location: "Tatooine"
+            country: "Galaxy Far Far Away"
+            temperature: 28
+            feelsLike: 32
+            humidity: 45
+            pressure: 1013
+            windSpeed: 15
+            conditions: "Clear sky"
+            source: "OPENWEATHERMAP"
+            isFallback: false
+          fusion:
+            summary: "Luke Skywalker from Tatooine - Currently Clear sky"
+            compatibility: "perfect match"
+            dataQuality:
+              character: "complete"
+              planet: "complete"
+              weather: "complete"
+
+tags:
+  - name: Fusion
+    description: Operaciones de fusión de datos Star Wars + Meteorológicos
+  - name: Storage
+    description: Almacenamiento de datos personalizados
+  - name: History
+    description: Consulta de historial y datos almacenados
+
+x-rate-limits:
+  fusion:
+    rate: 100
+    period: 3600
+    description: Máximo 100 solicitudes por hora para el endpoint /fusion
+  store:
+    rate: 100
+    period: 3600
+    description: Máximo 100 solicitudes por hora para el endpoint /store
+  history:
+    rate: 100
+    period: 3600
+    description: Máximo 100 solicitudes por hora para el endpoint /history
+  docs:
+    rate: 200
+    period: 3600
+    description: Máximo 200 solicitudes por hora para la documentación
